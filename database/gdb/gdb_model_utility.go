@@ -68,6 +68,11 @@ func (m *Model) mappingAndFilterToTableFields(table string, fields []any, filter
 	if fieldsTable != "" {
 		hasTable, _ := m.db.GetCore().HasTable(fieldsTable)
 		if !hasTable {
+			if fieldsTable != m.tablesInit {
+				// Table/alias unknown (e.g., FieldsPrefix called before LeftJoin), skip filtering.
+				return fields
+			}
+			// HasTable cache miss for main table, fallback to use main table for field mapping.
 			fieldsTable = m.tablesInit
 		}
 	}
@@ -80,7 +85,7 @@ func (m *Model) mappingAndFilterToTableFields(table string, fields []any, filter
 		return fields
 	}
 	var outputFieldsArray = make([]any, 0)
-	fieldsKeyMap := make(map[string]interface{}, len(fieldsMap))
+	fieldsKeyMap := make(map[string]any, len(fieldsMap))
 	for k := range fieldsMap {
 		fieldsKeyMap[k] = nil
 	}
@@ -89,6 +94,10 @@ func (m *Model) mappingAndFilterToTableFields(table string, fields []any, filter
 			fieldStr         = gconv.String(field)
 			inputFieldsArray []string
 		)
+		// Skip empty string fields.
+		if fieldStr == "" {
+			continue
+		}
 		switch {
 		case gregex.IsMatchString(regularFieldNameWithoutDotRegPattern, fieldStr):
 			inputFieldsArray = append(inputFieldsArray, fieldStr)
@@ -126,7 +135,7 @@ func (m *Model) mappingAndFilterToTableFields(table string, fields []any, filter
 
 // filterDataForInsertOrUpdate does filter feature with data for inserting/updating operations.
 // Note that, it does not filter list item, which is also type of map, for "omit empty" feature.
-func (m *Model) filterDataForInsertOrUpdate(data interface{}) (interface{}, error) {
+func (m *Model) filterDataForInsertOrUpdate(data any) (any, error) {
 	var err error
 	switch value := data.(type) {
 	case List:
@@ -247,7 +256,9 @@ func (m *Model) doMappingAndFilterForInsertOrUpdateDataMap(data Map, allowOmitEm
 // The parameter `master` specifies whether using the master node if master-slave configured.
 func (m *Model) getLink(master bool) Link {
 	if m.tx != nil {
-		return &txLink{m.tx.GetSqlTX()}
+		if sqlTx := m.tx.GetSqlTX(); sqlTx != nil {
+			return &txLink{sqlTx}
+		}
 	}
 	linkType := m.linkType
 	if linkType == 0 {
@@ -292,9 +303,9 @@ func (m *Model) getPrimaryKey() string {
 }
 
 // mergeArguments creates and returns new arguments by merging `m.extraArgs` and given `args`.
-func (m *Model) mergeArguments(args []interface{}) []interface{} {
+func (m *Model) mergeArguments(args []any) []any {
 	if len(m.extraArgs) > 0 {
-		newArgs := make([]interface{}, len(m.extraArgs)+len(args))
+		newArgs := make([]any, len(m.extraArgs)+len(args))
 		copy(newArgs, m.extraArgs)
 		copy(newArgs[len(m.extraArgs):], args)
 		return newArgs

@@ -682,6 +682,7 @@ func Test_Model_Array(t *testing.T) {
 		t.Assert(all.Array("id"), g.Slice{1, 2, 3})
 		t.Assert(all.Array("nickname"), g.Slice{"name_1", "name_2", "name_3"})
 	})
+
 	gtest.C(t, func(t *gtest.T) {
 		array, err := db.Model(table).Fields("nickname").Where("id", g.Slice{1, 2, 3}).Array()
 		t.AssertNil(err)
@@ -757,6 +758,7 @@ func Test_Model_Value_WithCache(t *testing.T) {
 		t.AssertNil(err)
 		t.Assert(value.Int(), 0)
 	})
+
 	gtest.C(t, func(t *gtest.T) {
 		result, err := db.Model(table).Data(g.MapStrAny{
 			"id":       1,
@@ -1437,6 +1439,7 @@ func Test_Model_Option_Map(t *testing.T) {
 		t.AssertNE(one["nickname"].String(), "1")
 		t.Assert(one["passport"].String(), "1")
 	})
+
 	gtest.C(t, func(t *gtest.T) {
 		table := createTable()
 		defer dropTable(table)
@@ -2812,6 +2815,28 @@ func Test_Model_OnDuplicate(t *testing.T) {
 	})
 }
 
+func Test_Model_OnDuplicateWithCounter(t *testing.T) {
+	table := createInitTable()
+	defer dropTable(table)
+
+	gtest.C(t, func(t *gtest.T) {
+		data := g.Map{
+			"id":          1,
+			"passport":    "pp1",
+			"password":    "pw1",
+			"nickname":    "n1",
+			"create_time": "2016-06-06",
+		}
+		_, err := db.Model(table).OnConflict("id").OnDuplicate(g.Map{
+			"id": gdb.Counter{Field: "id", Value: 999999},
+		}).Data(data).Save()
+		t.AssertNil(err)
+		one, err := db.Model(table).WherePri(1).One()
+		t.AssertNil(err)
+		t.AssertNil(one)
+	})
+}
+
 func Test_Model_OnDuplicateEx(t *testing.T) {
 	table := createInitTable()
 	defer dropTable(table)
@@ -2919,7 +2944,9 @@ func Test_Model_Raw(t *testing.T) {
 			Limit(2).
 			Count()
 		t.AssertNil(err)
-		t.Assert(count, int64(6))
+		// Raw SQL selects {1,5,7,8,9,10}, Where filters to id < 8 AND id IN {1,2,3,4,5,6,7}
+		// Result: {1,5,7} = 3 records
+		t.Assert(count, int64(3))
 	})
 }
 
@@ -3758,6 +3785,7 @@ func Test_Model_FixGdbJoin(t *testing.T) {
 				FieldsPrefix(`rules_template`, "name").
 				FieldsPrefix(`common_resource`, `src_instance_id`, "database_kind", "source_type", "ip", "port")
 			all, err := orm.OrderAsc("src_instance_id").All()
+			t.Assert(err, nil)
 			t.Assert(len(all), 4)
 			t.Assert(all[0]["pay_mode"], 1)
 			t.Assert(all[0]["src_instance_id"], 2)
